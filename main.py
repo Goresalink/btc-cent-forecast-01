@@ -21,7 +21,8 @@ Backtest (sliding checkpoints every 15 min over the practice recording,
   * practice cases: MAE 43,310 vs 47,055 (-8.0%), win rate 0.60.
 The same sign pattern (positive 1h, negative 24h coefficient) wins across
 the whole neighbourhood of these parameters, so the design is not tuned
-to a single point. Adjustments stay small (at most ~0.5% of price).
+to a single point. Adjustments stay small (at most ~0.5% of price) and are
+additionally capped at 0.8% in log terms as a guard against extreme days.
 
 Deterministic, Python 3.13 standard library only, no network, no clock.
 Reads every *.in file in $MAKEFUN_INPUT_DIR (else /input) in name order
@@ -39,6 +40,13 @@ A_LONG = -0.20   # weight on the 24-hour log-return (mean reversion)
 
 MIN_PRICE = 0.00001
 MAX_PRICE = 9999999.99999
+# Safety cap on the total log adjustment. On the whole practice recording
+# the adjustment never exceeded 0.51% in magnitude, so this cap never binds
+# on known data; it only stops a wild extrapolation if the final window
+# contains an extreme one-day move (e.g. a -10% day would otherwise push
+# the forecast +2% away from the checkpoint close on the mean-reversion
+# term alone).
+ADJ_CAP = 0.008
 
 
 def forecast_price(prices):
@@ -58,6 +66,10 @@ def forecast_price(prices):
     if n > 1440:
         ret_24h = log_last - math.log(prices[-1441])
         adj += A_LONG * ret_24h
+    if adj > ADJ_CAP:
+        adj = ADJ_CAP
+    elif adj < -ADJ_CAP:
+        adj = -ADJ_CAP
 
     price = math.exp(log_last + adj)
     price = round(price, 5)
